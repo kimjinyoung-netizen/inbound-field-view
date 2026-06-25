@@ -1,5 +1,4 @@
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1TNeWPRXhzd2RTNBC-vmMPr70XoWem259QS_WTAbtvxk/gviz/tq?tqx=out:csv&gid=0';
-const BRAND_ORDER = ['파인우드', '오가렌', '레어로우', '빌라레코드', '보블릭'];
 
 let allRows = [];
 let activeDay = 'today';
@@ -55,11 +54,6 @@ function parseCsv(text) {
   if (cur || row.length) { row.push(cur); rows.push(row); }
   return rows.filter(r => r.some(c => String(c).trim() !== ''));
 }
-function normalizeBrand(name) {
-  const s = String(name || '').trim();
-  for (const b of BRAND_ORDER) if (s.includes(b)) return b;
-  return s || '기타';
-}
 function statusKind(status) {
   const s = String(status || '').trim();
   if (s.includes('취소')) return 'cancel';
@@ -67,26 +61,54 @@ function statusKind(status) {
   if (s.includes('승인대기') || s === '대기') return 'pending';
   return 'normal';
 }
+function floorName(v) {
+  const s = String(v || '').trim();
+  if (!s) return '기타';
+  if (s.includes('층')) return s;
+  return `${s}층`;
+}
+function floorClass(name) {
+  const n = String(name).match(/\d+/)?.[0];
+  if (['1','2','3','4','5'].includes(n)) return `floor-${n}`;
+  return 'floor-etc';
+}
+function floorRank(name) {
+  const n = Number(String(name).match(/\d+/)?.[0]);
+  return Number.isFinite(n) && n > 0 ? n : 999;
+}
+function normalizePo(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  // CSV에서 큰 숫자가 3.10009E+09 형태로 내려오는 경우 보기 좋게 정수화
+  if (/^[0-9.]+e\+?\d+$/i.test(s)) {
+    const num = Number(s);
+    if (Number.isFinite(num)) return String(Math.trunc(num));
+  }
+  if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, '');
+  return s;
+}
 function mapRows(csvRows) {
   const header = csvRows[0].map(h => String(h).trim());
   const idx = (name) => header.findIndex(h => h === name || h.includes(name));
+  const idxExact = (name) => header.findIndex(h => h === name);
+  const floorIdx = idxExact('층') >= 0 ? idxExact('층') : 12; // M열: 층. 헤더가 없거나 늦게 추가되어도 M열을 우선 사용.
   const i = {
-    id: idx('예약ID'), date: idx('날짜'), time: idx('시작시간'), brand: idx('업체명'),
+    id: idx('예약ID'), date: idx('날짜'), time: idx('시작시간'), floor: floorIdx, customer: idx('업체명'),
     ton: idx('차량유형'), work: idx('작업유형'), status: idx('상태'), memo: idx('메모'), po: idx('발주번호')
   };
   return csvRows.slice(1).map(r => ({
     id: r[i.id] || '',
     date: parseDateValue(r[i.date] || ''),
     time: parseTimeValue(r[i.time] || ''),
-    brandRaw: r[i.brand] || '',
-    brand: normalizeBrand(r[i.brand] || ''),
+    floor: floorName(r[i.floor] || ''),
+    customer: r[i.customer] || '',
     ton: r[i.ton] || '',
     work: r[i.work] || '',
     status: r[i.status] || '',
     kind: statusKind(r[i.status] || ''),
     memo: r[i.memo] || '',
-    po: r[i.po] || ''
-  })).filter(r => r.date && r.brand && r.kind !== 'cancel');
+    po: normalizePo(r[i.po] || '')
+  })).filter(r => r.date && r.floor && r.kind !== 'cancel');
 }
 async function loadSheet() {
   $('errorState').hidden = true;
@@ -105,12 +127,11 @@ function updateDateLabel() {
 function rowMatches(r) {
   const q = searchText.trim().toLowerCase();
   if (!q) return true;
-  return [r.brandRaw, r.brand, r.po].some(v => String(v || '').toLowerCase().includes(q));
+  return [r.customer, r.po].some(v => String(v || '').toLowerCase().includes(q));
 }
-function sortBrands(keys) {
+function sortFloors(keys) {
   return keys.sort((a,b) => {
-    const ia = BRAND_ORDER.indexOf(a), ib = BRAND_ORDER.indexOf(b);
-    const ra = ia === -1 ? 999 : ia, rb = ib === -1 ? 999 : ib;
+    const ra = floorRank(a), rb = floorRank(b);
     if (ra !== rb) return ra - rb;
     return a.localeCompare(b, 'ko');
   });
@@ -119,7 +140,7 @@ function render() {
   updateDateLabel();
   const target = getTargetDate();
   const rows = allRows.filter(r => r.date === target).filter(rowMatches)
-    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99') || a.customer.localeCompare(b.customer, 'ko'));
 
   const total = rows.length;
   const done = rows.filter(r => r.kind === 'done').length;
@@ -131,35 +152,38 @@ function render() {
   $('pendingCount').textContent = `${pending}건`;
 
   const groups = {};
-  for (const r of rows) (groups[r.brand] ||= []).push(r);
-  const keys = sortBrands(Object.keys(groups));
-  const wrap = $('brandList');
+  for (const r of rows) (groups[r.floor] ||= []).push(r);
+  const keys = sortFloors(Object.keys(groups));
+  const wrap = $('floorList');
   wrap.innerHTML = '';
 
-  for (const brand of keys) {
-    const arr = groups[brand];
-    const brandDone = arr.filter(r => r.kind === 'done').length;
+  for (const floor of keys) {
+    const arr = groups[floor];
+    const floorDone = arr.filter(r => r.kind === 'done').length;
     const card = document.createElement('article');
-    card.className = 'brand-card';
+    card.className = 'floor-card';
     card.innerHTML = `
-      <div class="brand-head brand-${brand}">
-        <div class="brand-title">${escapeHtml(brand)}</div>
-        <div class="brand-progress">완료 ${brandDone} / ${arr.length} ▾</div>
+      <div class="floor-head ${floorClass(floor)}">
+        <div class="floor-title"><span class="dot"></span>${escapeHtml(floor)}</div>
+        <div class="floor-progress">완료 ${floorDone} / ${arr.length} ▾</div>
       </div>
-      <div class="brand-body">
-        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div></div>
+      <div class="floor-body">
+        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div><div>층</div></div>
         ${arr.map(r => `
           <div class="row ${r.kind === 'done' ? 'done' : ''}">
             <div class="time">${escapeHtml(r.time)}</div>
             <div class="po">${escapeHtml(r.po)}</div>
-            <div>${escapeHtml(r.ton)}</div>
-            <div>${escapeHtml(r.work)}</div>
+            <div class="ton">${escapeHtml(r.ton)}</div>
+            <div class="work">${escapeHtml(r.work)}</div>
             <div class="memo">${escapeHtml(r.memo || '')}</div>
-            <div>${statusBadge(r.kind)}</div>
+            <div class="status-wrap">${statusBadge(r.kind)}</div>
+            <div class="customer">${escapeHtml(r.customer)}</div>
+            <div class="floor-cell">${escapeHtml(r.floor)}</div>
+            <div class="meta">${escapeHtml(r.ton)} · ${escapeHtml(r.work)}</div>
           </div>`).join('')}
       </div>`;
-    card.querySelector('.brand-head').addEventListener('click', () => {
-      const body = card.querySelector('.brand-body');
+    card.querySelector('.floor-head').addEventListener('click', () => {
+      const body = card.querySelector('.floor-body');
       body.hidden = !body.hidden;
     });
     wrap.appendChild(card);
