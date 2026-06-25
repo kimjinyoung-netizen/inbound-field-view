@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>입고예약 현장보드</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="app">
-    <header class="top">
+  <main class="app">
+    <header class="topbar">
       <div>
         <h1>입고예약 현장보드</h1>
         <p id="dateLabel" class="date-label"></p>
@@ -21,24 +21,22 @@
       <button id="tomorrowBtn" class="tab" data-day="tomorrow">내일</button>
     </section>
 
-    <section class="search-row">
-      <input id="searchInput" type="search" placeholder="브랜드, 발주번호, 메모 검색" />
+    <section class="toolbar">
+      <input id="searchInput" type="search" placeholder="브랜드, 발주번호, 메모 검색" autocomplete="off" />
     </section>
 
     <section class="summary" aria-label="입고 현황">
       <div class="summary-card"><span>전체</span><strong id="totalCount">0건</strong></div>
       <div class="summary-card done"><span>완료</span><strong id="doneCount">0건</strong></div>
-      <div class="summary-card pending"><span>미입고</span><strong id="notDoneCount">0건</strong></div>
-      <div class="summary-card wait"><span>승인대기</span><strong id="waitingCount">0건</strong></div>
+      <div class="summary-card wait"><span>미입고</span><strong id="notDoneCount">0건</strong></div>
+      <div class="summary-card pending"><span>승인대기</span><strong id="pendingCount">0건</strong></div>
     </section>
 
-    <main id="board" class="board"></main>
-    <div id="empty" class="empty hidden">조회된 입고예약이 없습니다.</div>
-    <div id="loading" class="loading hidden">시트 데이터를 불러오는 중...</div>
-    <div id="error" class="error hidden"></div>
-  </div>
+    <section id="brandList" class="brand-list"></section>
+    <div id="emptyState" class="empty-state" hidden>조회된 입고예약이 없습니다.</div>
+    <div id="errorState" class="error-state" hidden></div>
+  </main>
 
-  <script src="./config.js"></script>
-  <script src="./app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
