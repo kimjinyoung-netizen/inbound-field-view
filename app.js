@@ -105,7 +105,7 @@ function updateDateLabel() {
 function rowMatches(r) {
   const q = searchText.trim().toLowerCase();
   if (!q) return true;
-  return [r.brandRaw, r.brand, r.po, r.memo, r.ton, r.work].some(v => String(v || '').toLowerCase().includes(q));
+  return [r.brandRaw, r.brand, r.po].some(v => String(v || '').toLowerCase().includes(q));
 }
 function sortBrands(keys) {
   return keys.sort((a,b) => {
