@@ -168,7 +168,7 @@ function render() {
         <div class="floor-progress">완료 ${floorDone} / ${arr.length} ▾</div>
       </div>
       <div class="floor-body">
-        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div><div>층</div></div>
+        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div></div>
         ${arr.map(r => `
           <div class="row ${r.kind === 'done' ? 'done' : ''}">
             <div class="time">${escapeHtml(r.time)}</div>
@@ -178,8 +178,6 @@ function render() {
             <div class="memo">${escapeHtml(r.memo || '')}</div>
             <div class="status-wrap">${statusBadge(r.kind)}</div>
             <div class="customer">${escapeHtml(r.customer)}</div>
-            <div class="floor-cell">${escapeHtml(r.floor)}</div>
-            <div class="meta">${escapeHtml(r.ton)} · ${escapeHtml(r.work)}</div>
           </div>`).join('')}
       </div>`;
     card.querySelector('.floor-head').addEventListener('click', () => {
