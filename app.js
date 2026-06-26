@@ -5,6 +5,7 @@ let activeDay = 'today';
 let searchText = '';
 let activeStatus = 'all';
 let activeFloor = 'all';
+let activeBrand = 'all';
 
 const $ = (id) => document.getElementById(id);
 
@@ -144,12 +145,36 @@ function rowMatchesFloor(r) {
   if (activeFloor === 'all') return true;
   return r.floor === activeFloor;
 }
+function rowMatchesBrand(r) {
+  if (activeBrand === 'all') return true;
+  return String(r.customer || '') === activeBrand;
+}
+function updateBrandOptions(dayRows) {
+  const select = $('brandSelect');
+  if (!select) return;
+  const current = activeBrand;
+  const brands = [...new Set(dayRows.map(r => String(r.customer || '').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'ko'));
+  select.innerHTML = '<option value="all">브랜드 전체</option>' +
+    brands.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
+  if (current !== 'all' && brands.includes(current)) {
+    select.value = current;
+  } else {
+    activeBrand = 'all';
+    select.value = 'all';
+  }
+}
 function render() {
   updateDateLabel();
   const target = getTargetDate();
-  const dayRows = allRows
+  const baseRows = allRows
     .filter(r => r.date === target)
-    .filter(rowMatchesSearch)
+    .filter(rowMatchesSearch);
+
+  updateBrandOptions(baseRows);
+
+  const dayRows = baseRows
+    .filter(rowMatchesBrand)
     .sort((a,b) => (floorRank(a.floor) - floorRank(b.floor)) || (a.time || '99:99').localeCompare(b.time || '99:99') || a.customer.localeCompare(b.customer, 'ko'));
 
   const total = dayRows.length;
@@ -273,6 +298,10 @@ $('searchToggle').addEventListener('click', () => {
   if (!box.hidden) $('searchInput').focus();
 });
 $('searchInput').addEventListener('input', e => { searchText = e.target.value; render(); });
+$('brandSelect')?.addEventListener('change', e => {
+  activeBrand = e.target.value || 'all';
+  render();
+});
 $('refreshBtn').addEventListener('click', refresh);
 window.addEventListener('resize', moveDayThumb);
 
