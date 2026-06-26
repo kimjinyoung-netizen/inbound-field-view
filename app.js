@@ -3,7 +3,8 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1TNeWPRXhzd2RTNBC-
 let allRows = [];
 let activeDay = 'today';
 let searchText = '';
-let activeFilter = 'all';
+let activeStatus = 'all';
+let activeFloor = 'all';
 
 const $ = (id) => document.getElementById(id);
 
@@ -62,27 +63,19 @@ function statusKind(status) {
   if (s.includes('승인대기') || s === '대기') return 'pending';
   return 'normal';
 }
-
 function cleanVehicleType(v) {
-  // 차량유형에 '컨테이너 20FT', '20FT 컨테이너'처럼 들어오면
-  // 화면에는 '컨테이너' 글자만 빼고 20FT/40FT는 그대로 표시합니다.
   return String(v || '')
     .replace(/컨테이너/g, '')
     .replace(/container/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
-
 function floorName(v) {
   const s = String(v || '').trim();
   if (!s) return '기타';
   if (s.includes('층')) return s;
-  return `${s}층`;
-}
-function floorClass(name) {
-  const n = String(name).match(/\d+/)?.[0];
-  if (['1','2','3','4','5'].includes(n)) return `floor-${n}`;
-  return 'floor-etc';
+  if (/^\d+$/.test(s)) return `${s}층`;
+  return s;
 }
 function floorRank(name) {
   const n = Number(String(name).match(/\d+/)?.[0]);
@@ -91,7 +84,6 @@ function floorRank(name) {
 function normalizePo(v) {
   const s = String(v ?? '').trim();
   if (!s) return '';
-  // CSV에서 큰 숫자가 3.10009E+09 형태로 내려오는 경우 보기 좋게 정수화
   if (/^[0-9.]+e\+?\d+$/i.test(s)) {
     const num = Number(s);
     if (Number.isFinite(num)) return String(Math.trunc(num));
@@ -103,7 +95,7 @@ function mapRows(csvRows) {
   const header = csvRows[0].map(h => String(h).trim());
   const idx = (name) => header.findIndex(h => h === name || h.includes(name));
   const idxExact = (name) => header.findIndex(h => h === name);
-  const floorIdx = idxExact('층') >= 0 ? idxExact('층') : 12; // M열: 층. 헤더가 없거나 늦게 추가되어도 M열을 우선 사용.
+  const floorIdx = idxExact('층') >= 0 ? idxExact('층') : 12; // M열
   const i = {
     id: idx('예약ID'), date: idx('날짜'), time: idx('시작시간'), floor: floorIdx, customer: idx('업체명'),
     ton: idx('차량유형'), work: idx('작업유형'), status: idx('상태'), memo: idx('메모'), po: idx('발주번호')
@@ -120,7 +112,7 @@ function mapRows(csvRows) {
     kind: statusKind(r[i.status] || ''),
     memo: r[i.memo] || '',
     po: normalizePo(r[i.po] || '')
-  })).filter(r => r.date && r.floor && r.kind !== 'cancel');
+  })).filter(r => r.date && r.kind !== 'cancel');
 }
 async function loadSheet() {
   $('errorState').hidden = true;
@@ -136,104 +128,154 @@ function updateDateLabel() {
   const d = activeDay === 'today' ? todayLocal(0) : todayLocal(1);
   $('dateLabel').textContent = `${activeDay === 'today' ? '오늘' : '내일'} ${mdLabel(d)}`;
 }
-function rowMatches(r) {
+function rowMatchesSearch(r) {
   const q = searchText.trim().toLowerCase();
   if (!q) return true;
   return [r.customer, r.po].some(v => String(v || '').toLowerCase().includes(q));
 }
-function rowMatchesFilter(r) {
-  if (activeFilter === 'all') return true;
-  if (activeFilter === 'done') return r.kind === 'done';
-  if (activeFilter === 'pending') return r.kind === 'pending';
-  if (activeFilter === 'notDone') return r.kind !== 'done' && r.kind !== 'pending';
+function rowMatchesStatus(r) {
+  if (activeStatus === 'all') return true;
+  if (activeStatus === 'done') return r.kind === 'done';
+  if (activeStatus === 'pending') return r.kind === 'pending';
+  if (activeStatus === 'notDone') return r.kind !== 'done' && r.kind !== 'pending';
   return true;
 }
-function sortFloors(keys) {
-  return keys.sort((a,b) => {
-    const ra = floorRank(a), rb = floorRank(b);
-    if (ra !== rb) return ra - rb;
-    return a.localeCompare(b, 'ko');
-  });
+function rowMatchesFloor(r) {
+  if (activeFloor === 'all') return true;
+  return r.floor === activeFloor;
 }
 function render() {
   updateDateLabel();
   const target = getTargetDate();
-  const baseRows = allRows.filter(r => r.date === target).filter(rowMatches)
-    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99') || a.floor.localeCompare(b.floor, 'ko') || a.customer.localeCompare(b.customer, 'ko'));
+  const dayRows = allRows
+    .filter(r => r.date === target)
+    .filter(rowMatchesSearch)
+    .sort((a,b) => (floorRank(a.floor) - floorRank(b.floor)) || (a.time || '99:99').localeCompare(b.time || '99:99') || a.customer.localeCompare(b.customer, 'ko'));
 
-  const total = baseRows.length;
-  const done = baseRows.filter(r => r.kind === 'done').length;
-  const pending = baseRows.filter(r => r.kind === 'pending').length;
+  const total = dayRows.length;
+  const done = dayRows.filter(r => r.kind === 'done').length;
+  const pending = dayRows.filter(r => r.kind === 'pending').length;
   const notDone = Math.max(0, total - done - pending);
-  $('totalCount').textContent = `${total}건`;
-  $('doneCount').textContent = `${done}건`;
-  $('notDoneCount').textContent = `${notDone}건`;
-  $('pendingCount').textContent = `${pending}건`;
+  $('totalCount').textContent = total;
+  $('doneCount').textContent = done;
+  $('notDoneCount').textContent = notDone;
+  $('pendingCount').textContent = pending;
 
-  document.querySelectorAll('.summary-card').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === activeFilter));
+  document.querySelectorAll('.status-tab').forEach(btn => btn.classList.toggle('on', btn.dataset.filter === activeStatus));
 
-  const rows = baseRows.filter(rowMatchesFilter);
-  const groups = {};
-  for (const r of rows) (groups[r.floor] ||= []).push(r);
-  const keys = sortFloors(Object.keys(groups));
-  const wrap = $('floorList');
-  wrap.innerHTML = '';
+  const statusRows = dayRows.filter(rowMatchesStatus);
+  updateFloorCounts(statusRows);
 
-  for (const floor of keys) {
-    const arr = groups[floor];
-    const floorDone = arr.filter(r => r.kind === 'done').length;
-    const card = document.createElement('article');
-    card.className = 'floor-card';
-    card.innerHTML = `
-      <div class="floor-head ${floorClass(floor)}">
-        <div class="floor-title"><span class="dot"></span>${escapeHtml(floor)}</div>
-        <div class="floor-progress">완료 ${floorDone} / ${arr.length} ▾</div>
-      </div>
-      <div class="floor-body">
-        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div><div>층</div></div>
-        ${arr.map(r => `
-          <div class="row ${r.kind === 'done' ? 'done' : ''}">
-            <div class="time">${escapeHtml(r.time)}</div>
-            <div class="po">${escapeHtml(r.po)}</div>
-            <div class="ton">${escapeHtml(r.ton)}</div>
-            <div class="work">${escapeHtml(r.work)}</div>
-            <div class="memo">${escapeHtml(r.memo || '')}</div>
-            <div class="status-wrap">${statusBadge(r.kind)}</div>
-            <div class="customer">${escapeHtml(r.customer)}</div>
-            <div class="floor-cell">${escapeHtml(r.floor)}</div>
-          </div>`).join('')}
-      </div>`;
-    card.querySelector('.floor-head').addEventListener('click', () => {
-      const body = card.querySelector('.floor-body');
-      body.hidden = !body.hidden;
-    });
-    wrap.appendChild(card);
+  const rows = statusRows.filter(rowMatchesFloor);
+  const list = $('list');
+  list.innerHTML = '';
+
+  if (!rows.length) {
+    $('emptyState').hidden = false;
+    return;
   }
-  $('emptyState').hidden = rows.length !== 0;
+  $('emptyState').hidden = true;
+
+  const dateRow = document.createElement('div');
+  dateRow.className = 'date-row';
+  dateRow.textContent = `${activeDay === 'today' ? '오늘' : '내일'} 입고 · ${activeFloor === 'all' ? '전체 층' : activeFloor}`;
+  list.appendChild(dateRow);
+
+  rows.forEach((r, idx) => {
+    const el = document.createElement('article');
+    el.className = `item-card ${r.kind === 'done' ? 'is-done' : ''}`;
+    el.style.animationDelay = `${idx * 18}ms`;
+    el.innerHTML = `
+      <div class="item-time">
+        <strong>${escapeHtml(r.time)}</strong>
+        <span>${ampm(r.time)}</span>
+      </div>
+      <div class="item-bar"></div>
+      <div class="item-main">
+        <div class="item-top">
+          <div class="po">${escapeHtml(r.po || '-')}</div>
+          ${statusBadge(r.kind)}
+        </div>
+        <div class="customer">${escapeHtml(r.customer || '-')}</div>
+        <div class="meta">
+          <span class="chip tone">${escapeHtml(r.ton || '-')}</span>
+          <span class="chip work">${escapeHtml(r.work || '-')}</span>
+          <span class="chip floor">${escapeHtml(r.floor || '-')}</span>
+          <span class="chip memo">${escapeHtml(r.memo || '-')}</span>
+        </div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+}
+function updateFloorCounts(rows) {
+  const counts = { all: rows.length, '1층': 0, '2층': 0, '3층': 0, '4층': 0 };
+  rows.forEach(r => {
+    if (counts[r.floor] !== undefined) counts[r.floor]++;
+  });
+  document.querySelectorAll('.floor-tab').forEach(btn => {
+    const key = btn.dataset.floor;
+    btn.querySelector('em').textContent = counts[key] ?? 0;
+    btn.classList.toggle('on', key === activeFloor);
+  });
+}
+function ampm(t) {
+  const h = Number(String(t || '0').split(':')[0]);
+  return h < 12 ? 'AM' : 'PM';
 }
 function statusBadge(kind) {
-  if (kind === 'done') return '<span class="status-badge">✅ 완료</span>';
-  if (kind === 'pending') return '<span class="status-badge status-pending">⚠ 승인대기</span>';
-  return '<span class="status-normal">-</span>';
+  if (kind === 'done') return '<span class="badge done">완료</span>';
+  if (kind === 'pending') return '<span class="badge pending">승인대기</span>';
+  return '<span class="badge normal">미입고</span>';
 }
 function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
+function moveDayThumb() {
+  const seg = $('daySeg');
+  const thumb = $('dayThumb');
+  const btn = seg.querySelector('button.on');
+  if (!btn) return;
+  thumb.style.width = `${btn.offsetWidth}px`;
+  thumb.style.transform = `translateX(${btn.offsetLeft - 4}px)`;
+}
 async function refresh() {
-  try { await loadSheet(); render(); }
-  catch (e) { $('errorState').textContent = e.message; $('errorState').hidden = false; }
+  const btn = $('refreshBtn');
+  try {
+    btn.classList.remove('spin'); void btn.offsetWidth; btn.classList.add('spin');
+    await loadSheet();
+    render();
+  } catch (e) {
+    $('errorState').textContent = e.message;
+    $('errorState').hidden = false;
+  }
 }
 
-document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+// events
+document.querySelectorAll('#daySeg button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#daySeg button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
   activeDay = btn.dataset.day;
+  moveDayThumb();
   render();
 }));
+document.querySelectorAll('.status-tab').forEach(btn => btn.addEventListener('click', () => {
+  activeStatus = btn.dataset.filter || 'all';
+  render();
+}));
+document.querySelectorAll('.floor-tab').forEach(btn => btn.addEventListener('click', () => {
+  activeFloor = btn.dataset.floor || 'all';
+  render();
+}));
+$('searchToggle').addEventListener('click', () => {
+  const box = $('searchBox');
+  box.hidden = !box.hidden;
+  if (!box.hidden) $('searchInput').focus();
+});
 $('searchInput').addEventListener('input', e => { searchText = e.target.value; render(); });
-document.querySelectorAll('.summary-card').forEach(btn => btn.addEventListener('click', () => {
-  activeFilter = btn.dataset.filter || 'all';
-  render();
-}));
 $('refreshBtn').addEventListener('click', refresh);
+window.addEventListener('resize', moveDayThumb);
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveDayThumb);
+moveDayThumb();
 refresh();

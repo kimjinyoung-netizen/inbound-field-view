@@ -2,37 +2,52 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>입고 예약 보드</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="topbar">
+  <main class="app-shell">
+    <header class="appbar">
       <div>
         <h1>입고 예약 보드</h1>
         <p id="dateLabel" class="date-label"></p>
       </div>
-      <button id="refreshBtn" class="icon-btn" title="새로고침" aria-label="새로고침">↻</button>
+      <div class="actions">
+        <button id="searchToggle" class="icon-btn" title="검색" aria-label="검색">⌕</button>
+        <button id="refreshBtn" class="icon-btn" title="새로고침" aria-label="새로고침">↻</button>
+      </div>
     </header>
 
-    <section class="tabs" aria-label="날짜 선택">
-      <button id="todayBtn" class="tab active" data-day="today">오늘</button>
-      <button id="tomorrowBtn" class="tab" data-day="tomorrow">내일</button>
+    <section class="toolbar">
+      <div class="seg" id="daySeg" aria-label="날짜 선택">
+        <span class="thumb" id="dayThumb"></span>
+        <button id="todayBtn" class="on" data-day="today" type="button">오늘</button>
+        <button id="tomorrowBtn" data-day="tomorrow" type="button">내일</button>
+      </div>
     </section>
 
-    <section class="toolbar">
+    <section id="searchBox" class="search-box" hidden>
       <input id="searchInput" type="search" placeholder="고객사, 발주번호 검색" autocomplete="off" />
     </section>
 
-    <section class="summary" aria-label="입고 현황">
-      <button class="summary-card active" data-filter="all" type="button"><span>전체</span><strong id="totalCount">0건</strong></button>
-      <button class="summary-card done" data-filter="done" type="button"><span>완료</span><strong id="doneCount">0건</strong></button>
-      <button class="summary-card wait" data-filter="notDone" type="button"><span>미입고</span><strong id="notDoneCount">0건</strong></button>
-      <button class="summary-card pending" data-filter="pending" type="button"><span>승인대기</span><strong id="pendingCount">0건</strong></button>
+    <section class="status-tabs" id="statusTabs" aria-label="입고 상태 필터">
+      <button class="status-tab on" data-filter="all" type="button"><span>전체</span><strong id="totalCount">0</strong></button>
+      <button class="status-tab done" data-filter="done" type="button"><span>완료</span><strong id="doneCount">0</strong></button>
+      <button class="status-tab miss" data-filter="notDone" type="button"><span>미입고</span><strong id="notDoneCount">0</strong></button>
+      <button class="status-tab pending" data-filter="pending" type="button"><span>승인대기</span><strong id="pendingCount">0</strong></button>
     </section>
 
-    <section id="floorList" class="floor-list"></section>
+    <section class="floor-tabs" id="floorTabs" aria-label="층 필터">
+      <button class="floor-tab on" data-floor="all" type="button"><span>전체</span><em>0</em></button>
+      <button class="floor-tab" data-floor="1층" type="button"><span>1층</span><em>0</em></button>
+      <button class="floor-tab" data-floor="2층" type="button"><span>2층</span><em>0</em></button>
+      <button class="floor-tab" data-floor="3층" type="button"><span>3층</span><em>0</em></button>
+      <button class="floor-tab" data-floor="4층" type="button"><span>4층</span><em>0</em></button>
+    </section>
+
+    <section class="list" id="list"></section>
     <div id="emptyState" class="empty-state" hidden>조회된 입고예약이 없습니다.</div>
     <div id="errorState" class="error-state" hidden></div>
   </main>
