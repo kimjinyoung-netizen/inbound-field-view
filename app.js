@@ -3,6 +3,7 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1TNeWPRXhzd2RTNBC-
 let allRows = [];
 let activeDay = 'today';
 let searchText = '';
+let activeFilter = 'all';
 
 const $ = (id) => document.getElementById(id);
 
@@ -61,6 +62,17 @@ function statusKind(status) {
   if (s.includes('승인대기') || s === '대기') return 'pending';
   return 'normal';
 }
+
+function cleanVehicleType(v) {
+  // 차량유형에 '컨테이너 20FT', '20FT 컨테이너'처럼 들어오면
+  // 화면에는 '컨테이너' 글자만 빼고 20FT/40FT는 그대로 표시합니다.
+  return String(v || '')
+    .replace(/컨테이너/g, '')
+    .replace(/container/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function floorName(v) {
   const s = String(v || '').trim();
   if (!s) return '기타';
@@ -102,7 +114,7 @@ function mapRows(csvRows) {
     time: parseTimeValue(r[i.time] || ''),
     floor: floorName(r[i.floor] || ''),
     customer: r[i.customer] || '',
-    ton: r[i.ton] || '',
+    ton: cleanVehicleType(r[i.ton] || ''),
     work: r[i.work] || '',
     status: r[i.status] || '',
     kind: statusKind(r[i.status] || ''),
@@ -129,6 +141,13 @@ function rowMatches(r) {
   if (!q) return true;
   return [r.customer, r.po].some(v => String(v || '').toLowerCase().includes(q));
 }
+function rowMatchesFilter(r) {
+  if (activeFilter === 'all') return true;
+  if (activeFilter === 'done') return r.kind === 'done';
+  if (activeFilter === 'pending') return r.kind === 'pending';
+  if (activeFilter === 'notDone') return r.kind !== 'done' && r.kind !== 'pending';
+  return true;
+}
 function sortFloors(keys) {
   return keys.sort((a,b) => {
     const ra = floorRank(a), rb = floorRank(b);
@@ -139,18 +158,21 @@ function sortFloors(keys) {
 function render() {
   updateDateLabel();
   const target = getTargetDate();
-  const rows = allRows.filter(r => r.date === target).filter(rowMatches)
-    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99') || a.customer.localeCompare(b.customer, 'ko'));
+  const baseRows = allRows.filter(r => r.date === target).filter(rowMatches)
+    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99') || a.floor.localeCompare(b.floor, 'ko') || a.customer.localeCompare(b.customer, 'ko'));
 
-  const total = rows.length;
-  const done = rows.filter(r => r.kind === 'done').length;
-  const pending = rows.filter(r => r.kind === 'pending').length;
+  const total = baseRows.length;
+  const done = baseRows.filter(r => r.kind === 'done').length;
+  const pending = baseRows.filter(r => r.kind === 'pending').length;
   const notDone = Math.max(0, total - done - pending);
   $('totalCount').textContent = `${total}건`;
   $('doneCount').textContent = `${done}건`;
   $('notDoneCount').textContent = `${notDone}건`;
   $('pendingCount').textContent = `${pending}건`;
 
+  document.querySelectorAll('.summary-card').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === activeFilter));
+
+  const rows = baseRows.filter(rowMatchesFilter);
   const groups = {};
   for (const r of rows) (groups[r.floor] ||= []).push(r);
   const keys = sortFloors(Object.keys(groups));
@@ -168,7 +190,7 @@ function render() {
         <div class="floor-progress">완료 ${floorDone} / ${arr.length} ▾</div>
       </div>
       <div class="floor-body">
-        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div></div>
+        <div class="row header"><div>시간</div><div>발주번호</div><div>톤수</div><div>작업</div><div>메모</div><div>상태</div><div>고객사</div><div>층</div></div>
         ${arr.map(r => `
           <div class="row ${r.kind === 'done' ? 'done' : ''}">
             <div class="time">${escapeHtml(r.time)}</div>
@@ -178,6 +200,7 @@ function render() {
             <div class="memo">${escapeHtml(r.memo || '')}</div>
             <div class="status-wrap">${statusBadge(r.kind)}</div>
             <div class="customer">${escapeHtml(r.customer)}</div>
+            <div class="floor-cell">${escapeHtml(r.floor)}</div>
           </div>`).join('')}
       </div>`;
     card.querySelector('.floor-head').addEventListener('click', () => {
@@ -208,5 +231,9 @@ document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', (
   render();
 }));
 $('searchInput').addEventListener('input', e => { searchText = e.target.value; render(); });
+document.querySelectorAll('.summary-card').forEach(btn => btn.addEventListener('click', () => {
+  activeFilter = btn.dataset.filter || 'all';
+  render();
+}));
 $('refreshBtn').addEventListener('click', refresh);
 refresh();

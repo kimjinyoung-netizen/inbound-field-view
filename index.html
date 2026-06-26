@@ -26,10 +26,10 @@
     </section>
 
     <section class="summary" aria-label="입고 현황">
-      <div class="summary-card"><span>전체</span><strong id="totalCount">0건</strong></div>
-      <div class="summary-card done"><span>완료</span><strong id="doneCount">0건</strong></div>
-      <div class="summary-card wait"><span>미입고</span><strong id="notDoneCount">0건</strong></div>
-      <div class="summary-card pending"><span>승인대기</span><strong id="pendingCount">0건</strong></div>
+      <button class="summary-card active" data-filter="all" type="button"><span>전체</span><strong id="totalCount">0건</strong></button>
+      <button class="summary-card done" data-filter="done" type="button"><span>완료</span><strong id="doneCount">0건</strong></button>
+      <button class="summary-card wait" data-filter="notDone" type="button"><span>미입고</span><strong id="notDoneCount">0건</strong></button>
+      <button class="summary-card pending" data-filter="pending" type="button"><span>승인대기</span><strong id="pendingCount">0건</strong></button>
     </section>
 
     <section id="floorList" class="floor-list"></section>
