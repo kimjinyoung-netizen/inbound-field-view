@@ -164,6 +164,13 @@ function updateBrandOptions(dayRows) {
     select.value = 'all';
   }
 }
+function sortByTimeFirst(a, b) {
+  return (a.time || '99:99').localeCompare(b.time || '99:99') ||
+    (floorRank(a.floor) - floorRank(b.floor)) ||
+    String(a.customer || '').localeCompare(String(b.customer || ''), 'ko') ||
+    String(a.po || '').localeCompare(String(b.po || ''), 'ko');
+}
+
 function render() {
   updateDateLabel();
   const target = getTargetDate();
@@ -175,7 +182,9 @@ function render() {
 
   const dayRows = baseRows
     .filter(rowMatchesBrand)
-    .sort((a,b) => (floorRank(a.floor) - floorRank(b.floor)) || (a.time || '99:99').localeCompare(b.time || '99:99') || a.customer.localeCompare(b.customer, 'ko'));
+    // 입고 리스트는 층보다 시간이 우선입니다.
+    // 전체/층/상태/브랜드 필터를 눌러도 항상 시간순으로 보입니다.
+    .sort(sortByTimeFirst);
 
   const total = dayRows.length;
   const done = dayRows.filter(r => r.kind === 'done').length;
@@ -191,7 +200,11 @@ function render() {
   const statusRows = dayRows.filter(rowMatchesStatus);
   updateFloorCounts(statusRows);
 
-  const rows = statusRows.filter(rowMatchesFloor);
+  const rows = statusRows
+    .filter(rowMatchesFloor)
+    // 최종 표시 직전에도 한 번 더 시간순 정렬합니다.
+    // 브랜드/층/상태 필터 조합과 관계없이 항상 시간순으로 보이게 하기 위함입니다.
+    .sort(sortByTimeFirst);
   const list = $('list');
   list.innerHTML = '';
 
