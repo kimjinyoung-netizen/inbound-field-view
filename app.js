@@ -1,6 +1,12 @@
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1TNeWPRXhzd2RTNBC-vmMPr70XoWem259QS_WTAbtvxk/gviz/tq?tqx=out:csv&gid=0';
+// 원본 관리 시트 L열(발주번호)에 숫자/문자가 섞이면 QUERY 시트에서 일부 값이 빈칸으로 내려올 수 있습니다.
+// 원본 시트가 웹에서 읽히는 경우에만, 예약ID 기준으로 빈 발주번호를 보정합니다.
+const SOURCE_CSV_URL = 'https://docs.google.com/spreadsheets/d/1fKVwmQ-Mx_cAbOSuGpWOfqPHupyZxHzW8apFCAkQqmo/gviz/tq?tqx=out:csv&sheet=%EC%98%88%EC%95%BD';
+// 시트3: 발주입고 상세 다운로드 내역. A=발주번호, P=제품, Q=제품명, T=수량만 사용합니다.
+const DETAIL_CSV_URL = 'https://docs.google.com/spreadsheets/d/1TNeWPRXhzd2RTNBC-vmMPr70XoWem259QS_WTAbtvxk/gviz/tq?tqx=out:csv&sheet=%EC%8B%9C%ED%8A%B83';
 
 let allRows = [];
+let detailByPo = new Map();
 let activeDay = 'today';
 let searchText = '';
 let activeStatus = 'all';
@@ -121,7 +127,67 @@ async function loadSheet() {
   if (!res.ok) throw new Error('시트 데이터를 읽지 못했습니다. 공유 권한과 CSV 접근을 확인해 주세요.');
   const text = await res.text();
   allRows = mapRows(parseCsv(text));
+  await patchBlankPoFromSource();
+  await loadDetails();
 }
+
+async function patchBlankPoFromSource() {
+  // QUERY 시트에서 발주번호가 빈칸으로 내려온 행만 보정합니다.
+  // 원본 시트 접근이 막혀 있으면 조용히 넘어가고 화면은 기존 QUERY 데이터로 표시됩니다.
+  const needsPatch = allRows.some(r => r.id && !String(r.po || '').trim());
+  if (!needsPatch) return;
+  try {
+    const res = await fetch(`${SOURCE_CSV_URL}&_=${Date.now()}`);
+    if (!res.ok) return;
+    const csvRows = parseCsv(await res.text());
+    if (!csvRows.length) return;
+    const header = csvRows[0].map(h => String(h).trim());
+    const idIdx = header.findIndex(h => h === '예약ID' || h.includes('예약ID'));
+    const poIdx = header.findIndex(h => h === '발주번호' || h.includes('발주번호'));
+    if (idIdx < 0 || poIdx < 0) return;
+    const poById = new Map();
+    csvRows.slice(1).forEach(r => {
+      const id = String(r[idIdx] || '').trim();
+      const po = normalizePo(r[poIdx] || '');
+      if (id && po) poById.set(id, po);
+    });
+    allRows = allRows.map(r => {
+      if (r.id && !String(r.po || '').trim() && poById.has(r.id)) {
+        return { ...r, po: poById.get(r.id) };
+      }
+      return r;
+    });
+  } catch (err) {
+    console.warn('원본 발주번호 보정 생략:', err);
+  }
+}
+
+function isNumericPo(po) {
+  return /^\d+$/.test(String(po || '').trim());
+}
+async function loadDetails() {
+  // 시트3 상세 내역은 선택 기능입니다. 권한/시트가 없으면 앱 목록은 그대로 동작합니다.
+  const nextMap = new Map();
+  try {
+    const res = await fetch(`${DETAIL_CSV_URL}&_=${Date.now()}`);
+    if (!res.ok) { detailByPo = nextMap; return; }
+    const rows = parseCsv(await res.text());
+    rows.slice(1).forEach(r => {
+      const po = normalizePo(r[0] || '');            // A열 발주번호
+      if (!isNumericPo(po)) return;                  // 퀵/추후기재/추후입력 등은 매칭 제외
+      const product = String(r[15] || '').trim();    // P열 제품
+      const productName = String(r[16] || '').trim();// Q열 제품명
+      const qty = String(r[19] || '').trim();        // T열 수량
+      if (!product && !productName && !qty) return;
+      if (!nextMap.has(po)) nextMap.set(po, []);
+      nextMap.get(po).push({ product, productName, qty });
+    });
+  } catch (err) {
+    console.warn('상세 내역 로드 생략:', err);
+  }
+  detailByPo = nextMap;
+}
+
 function getTargetDate() {
   return activeDay === 'today' ? ymd(todayLocal(0)) : ymd(todayLocal(1));
 }
@@ -222,6 +288,9 @@ function render() {
   rows.forEach((r, idx) => {
     const el = document.createElement('article');
     el.className = `item-card ${r.kind === 'done' ? 'is-done' : ''}`;
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', `${r.time} ${r.customer} 입고 상세 보기`);
     el.style.animationDelay = `${idx * 18}ms`;
     el.innerHTML = `
       <div class="item-time">
@@ -243,8 +312,56 @@ function render() {
         </div>
       </div>
     `;
+    el.addEventListener('click', () => openDetail(r));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDetail(r);
+      }
+    });
     list.appendChild(el);
   });
+}
+
+function openDetail(row) {
+  const sheet = $('detailSheet');
+  const title = $('detailTitle');
+  const meta = $('detailMeta');
+  const body = $('detailBody');
+  if (!sheet || !title || !meta || !body) return;
+
+  const po = normalizePo(row.po || '');
+  title.textContent = row.customer || '입고 상세';
+  meta.textContent = `${row.time || '-'} · 발주번호 ${po || '-'} · ${row.ton || '-'} · ${row.work || '-'}`;
+
+  if (!isNumericPo(po)) {
+    body.innerHTML = '<div class="detail-empty">발주번호 등록 후 상세 내역을 확인할 수 있습니다.</div>';
+  } else {
+    const items = detailByPo.get(po) || [];
+    if (!items.length) {
+      body.innerHTML = '<div class="detail-empty">상세 내역 없음</div>';
+    } else {
+      const totalQty = items.reduce((sum, i) => sum + (Number(String(i.qty).replace(/,/g, '')) || 0), 0);
+      body.innerHTML = `
+        <div class="detail-summary">총 ${items.length}개 품목${totalQty ? ` · 수량 ${totalQty.toLocaleString()}` : ''}</div>
+        <div class="detail-list">
+          ${items.map(i => `
+            <div class="detail-row">
+              <div class="detail-product">${escapeHtml(i.product || '-')}</div>
+              <div class="detail-name">${escapeHtml(i.productName || '-')}</div>
+              <div class="detail-qty">${escapeHtml(i.qty || '-')}</div>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+  }
+  sheet.hidden = false;
+  document.body.classList.add('detail-open');
+}
+function closeDetail() {
+  const sheet = $('detailSheet');
+  if (sheet) sheet.hidden = true;
+  document.body.classList.remove('detail-open');
 }
 function updateFloorCounts(rows) {
   const counts = { all: rows.length, '1층': 0, '2층': 0, '3층': 0, '4층': 0 };
@@ -316,6 +433,9 @@ $('brandSelect')?.addEventListener('change', e => {
   render();
 });
 $('refreshBtn').addEventListener('click', refresh);
+$('detailClose')?.addEventListener('click', closeDetail);
+$('detailBackdrop')?.addEventListener('click', closeDetail);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
 window.addEventListener('resize', moveDayThumb);
 
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveDayThumb);

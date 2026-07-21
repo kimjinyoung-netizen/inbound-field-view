@@ -60,6 +60,26 @@
     <div id="errorState" class="error-state" hidden></div>
   </main>
 
+
+
+  <section id="detailSheet" class="detail-sheet" hidden aria-label="입고 상세">
+    <div id="detailBackdrop" class="detail-backdrop"></div>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <div class="detail-handle"></div>
+      <div class="detail-head">
+        <div>
+          <h2 id="detailTitle">입고 상세</h2>
+          <p id="detailMeta"></p>
+        </div>
+        <button id="detailClose" class="detail-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="detail-columns">
+        <span>제품</span><span>제품명</span><span>수량</span>
+      </div>
+      <div id="detailBody" class="detail-body"></div>
+    </div>
+  </section>
+
   <script src="app.js"></script>
 </body>
 </html>
