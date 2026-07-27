@@ -163,7 +163,15 @@ async function patchBlankPoFromSource() {
 }
 
 function normalizeTextKey(v) {
-  return String(v || '').replace(/\s+/g, '').trim();
+  return String(v || '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+function isSecondMarketText(v) {
+  const s = normalizeTextKey(v);
+  return s.includes('세컨드마켓') || s.includes('세컨드');
 }
 function isNumericPo(po) {
   return /^\d+$/.test(normalizeTextKey(po));
@@ -171,10 +179,15 @@ function isNumericPo(po) {
 function detailLookupKey(po) {
   const raw = normalizePo(po || '');
   const s = normalizeTextKey(raw);
-  if (isNumericPo(s)) return s;
-  // 예외: 세컨드마켓은 발주번호가 한글이어도 시트3 A열과 매칭합니다.
-  // 공백/숨은 공백이 섞여도 같은 값으로 봅니다.
-  if (s.includes('세컨드마켓')) return '세컨드마켓';
+
+  // 예외는 숫자 검사보다 먼저 처리합니다.
+  // 발주번호가 세컨드마켓이면 한글이어도 시트3 A열과 매칭합니다.
+  if (isSecondMarketText(s)) return '세컨드마켓';
+
+  // 그 외는 숫자 발주번호만 상세 조회합니다.
+  if (/^\d+$/.test(s)) return s;
+
+  // 퀵/추후기재/추후입력 등은 상세 없음
   return '';
 }
 async function loadDetails() {
@@ -344,14 +357,15 @@ function openDetail(row) {
   if (!sheet || !title || !meta || !body) return;
 
   let po = normalizePo(row.po || '');
-  // QUERY 타입 문제로 한글 발주번호가 빈칸으로 내려오는 경우를 대비해,
-  // 고객사/메모에 세컨드마켓 단서가 있으면 세컨드마켓 상세를 조회합니다.
-  const rowHint = normalizeTextKey(`${row.customer || ''} ${row.memo || ''} ${po || ''}`);
-  if (!po && rowHint.includes('세컨드마켓')) po = '세컨드마켓';
+  // QUERY 타입 문제/공백/숨은 문자 때문에 한글 발주번호가 변형되어도
+  // 카드의 발주번호·고객사·메모 중 세컨드마켓 단서가 있으면 세컨드마켓 상세를 먼저 조회합니다.
+  const rowHintRaw = `${row.po || ''} ${row.customer || ''} ${row.memo || ''}`;
+  const forceSecondMarket = isSecondMarketText(rowHintRaw);
+  if (forceSecondMarket) po = po || '세컨드마켓';
   title.textContent = row.customer || '입고 상세';
   meta.textContent = `${row.time || '-'} · 발주번호 ${po || '-'} · ${row.ton || '-'} · ${row.work || '-'}`;
 
-  const key = detailLookupKey(po);
+  const key = forceSecondMarket ? '세컨드마켓' : detailLookupKey(po);
   if (!key) {
     body.innerHTML = '<div class="detail-empty">발주번호 등록 후 상세 내역을 확인할 수 있습니다.</div>';
   } else {
