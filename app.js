@@ -162,13 +162,18 @@ async function patchBlankPoFromSource() {
   }
 }
 
+function normalizeTextKey(v) {
+  return String(v || '').replace(/\s+/g, '').trim();
+}
 function isNumericPo(po) {
-  return /^\d+$/.test(String(po || '').trim());
+  return /^\d+$/.test(normalizeTextKey(po));
 }
 function detailLookupKey(po) {
-  const s = normalizePo(po || '');
+  const raw = normalizePo(po || '');
+  const s = normalizeTextKey(raw);
   if (isNumericPo(s)) return s;
-  // 숫자 발주번호가 아니어도 세컨드마켓 건은 발주입고 상세 내역과 매칭합니다.
+  // 예외: 세컨드마켓은 발주번호가 한글이어도 시트3 A열과 매칭합니다.
+  // 공백/숨은 공백이 섞여도 같은 값으로 봅니다.
   if (s.includes('세컨드마켓')) return '세컨드마켓';
   return '';
 }
@@ -338,7 +343,11 @@ function openDetail(row) {
   const body = $('detailBody');
   if (!sheet || !title || !meta || !body) return;
 
-  const po = normalizePo(row.po || '');
+  let po = normalizePo(row.po || '');
+  // QUERY 타입 문제로 한글 발주번호가 빈칸으로 내려오는 경우를 대비해,
+  // 고객사/메모에 세컨드마켓 단서가 있으면 세컨드마켓 상세를 조회합니다.
+  const rowHint = normalizeTextKey(`${row.customer || ''} ${row.memo || ''} ${po || ''}`);
+  if (!po && rowHint.includes('세컨드마켓')) po = '세컨드마켓';
   title.textContent = row.customer || '입고 상세';
   meta.textContent = `${row.time || '-'} · 발주번호 ${po || '-'} · ${row.ton || '-'} · ${row.work || '-'}`;
 
