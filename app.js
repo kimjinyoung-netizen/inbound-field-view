@@ -162,20 +162,8 @@ async function patchBlankPoFromSource() {
   }
 }
 
-function normalizeTextKey(v) {
-  return String(v || '').replace(/\s+/g, '').trim();
-}
 function isNumericPo(po) {
-  return /^\d+$/.test(normalizeTextKey(po));
-}
-function detailLookupKey(po) {
-  const raw = normalizePo(po || '');
-  const s = normalizeTextKey(raw);
-  if (isNumericPo(s)) return s;
-  // 예외: 세컨드마켓은 발주번호가 한글이어도 시트3 A열과 매칭합니다.
-  // 공백/숨은 공백이 섞여도 같은 값으로 봅니다.
-  if (s.includes('세컨드마켓')) return '세컨드마켓';
-  return '';
+  return /^\d+$/.test(String(po || '').trim());
 }
 async function loadDetails() {
   // 시트3 상세 내역은 선택 기능입니다. 권한/시트가 없으면 앱 목록은 그대로 동작합니다.
@@ -186,14 +174,13 @@ async function loadDetails() {
     const rows = parseCsv(await res.text());
     rows.slice(1).forEach(r => {
       const po = normalizePo(r[0] || '');            // A열 발주번호
-      const key = detailLookupKey(po);
-      if (!key) return;                              // 퀵/추후기재/추후입력 등은 매칭 제외
+      if (!isNumericPo(po)) return;                  // 퀵/추후기재/추후입력 등은 매칭 제외
       const product = String(r[15] || '').trim();    // P열 제품
       const productName = String(r[16] || '').trim();// Q열 제품명
       const qty = String(r[19] || '').trim();        // T열 수량
       if (!product && !productName && !qty) return;
-      if (!nextMap.has(key)) nextMap.set(key, []);
-      nextMap.get(key).push({ product, productName, qty });
+      if (!nextMap.has(po)) nextMap.set(po, []);
+      nextMap.get(po).push({ product, productName, qty });
     });
   } catch (err) {
     console.warn('상세 내역 로드 생략:', err);
@@ -343,19 +330,14 @@ function openDetail(row) {
   const body = $('detailBody');
   if (!sheet || !title || !meta || !body) return;
 
-  let po = normalizePo(row.po || '');
-  // QUERY 타입 문제로 한글 발주번호가 빈칸으로 내려오는 경우를 대비해,
-  // 고객사/메모에 세컨드마켓 단서가 있으면 세컨드마켓 상세를 조회합니다.
-  const rowHint = normalizeTextKey(`${row.customer || ''} ${row.memo || ''} ${po || ''}`);
-  if (!po && rowHint.includes('세컨드마켓')) po = '세컨드마켓';
+  const po = normalizePo(row.po || '');
   title.textContent = row.customer || '입고 상세';
   meta.textContent = `${row.time || '-'} · 발주번호 ${po || '-'} · ${row.ton || '-'} · ${row.work || '-'}`;
 
-  const key = detailLookupKey(po);
-  if (!key) {
+  if (!isNumericPo(po)) {
     body.innerHTML = '<div class="detail-empty">발주번호 등록 후 상세 내역을 확인할 수 있습니다.</div>';
   } else {
-    const items = detailByPo.get(key) || [];
+    const items = detailByPo.get(po) || [];
     if (!items.length) {
       body.innerHTML = '<div class="detail-empty">상세 내역 없음</div>';
     } else {
