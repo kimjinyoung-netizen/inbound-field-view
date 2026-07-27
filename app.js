@@ -165,6 +165,13 @@ async function patchBlankPoFromSource() {
 function isNumericPo(po) {
   return /^\d+$/.test(String(po || '').trim());
 }
+function detailLookupKey(po) {
+  const s = normalizePo(po || '');
+  if (isNumericPo(s)) return s;
+  // 숫자 발주번호가 아니어도 세컨드마켓 건은 발주입고 상세 내역과 매칭합니다.
+  if (s.includes('세컨드마켓')) return '세컨드마켓';
+  return '';
+}
 async function loadDetails() {
   // 시트3 상세 내역은 선택 기능입니다. 권한/시트가 없으면 앱 목록은 그대로 동작합니다.
   const nextMap = new Map();
@@ -174,13 +181,14 @@ async function loadDetails() {
     const rows = parseCsv(await res.text());
     rows.slice(1).forEach(r => {
       const po = normalizePo(r[0] || '');            // A열 발주번호
-      if (!isNumericPo(po)) return;                  // 퀵/추후기재/추후입력 등은 매칭 제외
+      const key = detailLookupKey(po);
+      if (!key) return;                              // 퀵/추후기재/추후입력 등은 매칭 제외
       const product = String(r[15] || '').trim();    // P열 제품
       const productName = String(r[16] || '').trim();// Q열 제품명
       const qty = String(r[19] || '').trim();        // T열 수량
       if (!product && !productName && !qty) return;
-      if (!nextMap.has(po)) nextMap.set(po, []);
-      nextMap.get(po).push({ product, productName, qty });
+      if (!nextMap.has(key)) nextMap.set(key, []);
+      nextMap.get(key).push({ product, productName, qty });
     });
   } catch (err) {
     console.warn('상세 내역 로드 생략:', err);
@@ -334,10 +342,11 @@ function openDetail(row) {
   title.textContent = row.customer || '입고 상세';
   meta.textContent = `${row.time || '-'} · 발주번호 ${po || '-'} · ${row.ton || '-'} · ${row.work || '-'}`;
 
-  if (!isNumericPo(po)) {
+  const key = detailLookupKey(po);
+  if (!key) {
     body.innerHTML = '<div class="detail-empty">발주번호 등록 후 상세 내역을 확인할 수 있습니다.</div>';
   } else {
-    const items = detailByPo.get(po) || [];
+    const items = detailByPo.get(key) || [];
     if (!items.length) {
       body.innerHTML = '<div class="detail-empty">상세 내역 없음</div>';
     } else {
