@@ -163,7 +163,14 @@ async function patchBlankPoFromSource() {
 }
 
 function normalizeTextKey(v) {
-  return String(v || '').replace(/\s+/g, '').trim();
+  return String(v ?? '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+function isSecondMarketText(v) {
+  return normalizeTextKey(v).includes('세컨드마켓');
 }
 function isNumericPo(po) {
   return /^\d+$/.test(normalizeTextKey(po));
@@ -171,10 +178,11 @@ function isNumericPo(po) {
 function detailLookupKey(po) {
   const raw = normalizePo(po || '');
   const s = normalizeTextKey(raw);
-  if (isNumericPo(s)) return s;
-  // 예외: 세컨드마켓은 발주번호가 한글이어도 시트3 A열과 매칭합니다.
-  // 공백/숨은 공백이 섞여도 같은 값으로 봅니다.
-  if (s.includes('세컨드마켓')) return '세컨드마켓';
+
+  // 중요: 세컨드마켓 예외를 숫자 검사보다 먼저 봅니다.
+  // 숫자 발주번호 로직은 그대로 유지하고, 세컨드마켓만 추가로 허용합니다.
+  if (isSecondMarketText(s)) return '세컨드마켓';
+  if (/^\d+$/.test(s)) return s;
   return '';
 }
 async function loadDetails() {
